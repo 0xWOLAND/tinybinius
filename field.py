@@ -159,7 +159,7 @@ def add_polys(a: List[BinaryFieldElement], b: List[BinaryFieldElement]):
     # Convert to Tensors if they're not already
     a = Tensor([x.value for x in a]) if isinstance(a[0], BinaryFieldElement) else (Tensor(a) if not isinstance(a, Tensor) else a)
     b = Tensor([x.value for x in b]) if isinstance(b[0], BinaryFieldElement) else (Tensor(b) if not isinstance(b, Tensor) else b)
-    
+
     if len(a) == len(b):
         return a ^ b
 
@@ -175,7 +175,6 @@ def mul_polys(a: List[BinaryFieldElement], b: List[BinaryFieldElement]):
     a = [x.value for x in a] if isinstance(a[0], BinaryFieldElement) else a
     b = [x.value for x in b] if isinstance(b[0], BinaryFieldElement) else b
 
-    # Determine the length of the result polynomial
     result_len = len(a) + len(b) - 1
 
     # Pad both polynomials to the result length
@@ -186,10 +185,73 @@ def mul_polys(a: List[BinaryFieldElement], b: List[BinaryFieldElement]):
     toeplitz_matrix = Tensor(toeplitz(a_padded.numpy(), np.zeros(result_len, dtype=np.uint8)))
     result = toeplitz_matrix.dot(b_padded)
 
-    return Tensor(np.array(result.numpy())[::-1] % MODULUS)
+    return Tensor(np.array(result.numpy()) % MODULUS)
 
+def compute_lagrange_poly(size, pt):
+    cls = get_class(pt)
+    opoly = Tensor([1])
+    ofactor = cls(1)
+    for i in range(size):
+        _i = cls(i)
+        if _i != pt:
+            opoly = mul_polys(opoly.tolist(), [-i, 1])
+            ofactor *= (pt - _i)
+    return opoly / ofactor.value
+
+def multilinear_poly_eval(evals, pt):
+    cls, evals, pt = enforce_type_compatibility(evals, pt)
+    assert len(evals) == 2 ** len(pt)
+    return _multilinear_poly_eval(cls, evals, pt)
+
+def _multilinear_poly_eval(cls, evals, pt):
+    if len(pt) == 0:
+        return evals[0]
+    top = _multilinear_poly_eval(cls, evals[:len(evals)//2], pt[:-1])
+    bottom = _multilinear_poly_eval(cls, evals[len(evals)//2:], pt[:-1])
+    return (
+        (bottom - top) * pt[-1] + top
+    )
+
+def extend(vals, expansion_factor=2):
+    cls, vals = enforce_type_compatibility(vals)
+    lagranges = [
+        compute_lagrange_poly(len(vals), i) for i in range(expansion_factor)
+    ]
+    output = vals[::]
+    for x in range(len(vals), expansion_factor * len(vals)):
+        o = cls(0)
+        for v, L in zip(vals, lagranges):
+            o += v * eval_poly_at(L, x)
+        output.append(o)
+    return output
+
+def evaluation_tensor_product(pt):
+    cls, pt = enforce_type_compatibility(pt)
+    o = [cls(1)]
+    for coord in pt:
+        o = [
+            (cls(1) - coord) * v for v in o
+        ] + [
+            coord * v for v in o
+        ]
+    return o
+
+def log2(x):
+    assert x & (x-1) == 0
+    return x.bit_length() - 1
+
+def pack_vector(bits, slice_size):
+    o = []
+    for pos in range(0, len(bits), slice_size):
+        new_value = 0
+        for v in reversed(bits[pos:pos+slice_size]):
+            assert v == 0 or v == 1
+            new_value = (new_value * 2) + (1 if v == 1 else 0)
+        o.append(new_value)
+    _, _, o = enforce_type_compatibility(bits, o)
+    return o
 
 if __name__ == "__main__":
     a = [1, 2, 3]
     b = [4, 5, 6, 7, 8, 10, 12]
-    print(mul_polys(a, b).tolist())
+    print(mul_polys(a, b))
