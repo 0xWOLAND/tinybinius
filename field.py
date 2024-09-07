@@ -2,9 +2,8 @@ from tinygrad import Tensor, dtypes
 import numpy as np
 
 def binmul(v1, v2, length=None):
-    print(rawmulcache[v1,v2].item(), v1, v2)
-    if v1 < 256 and v2 < 256 and rawmulcache[v1,v2].item() != -1:
-        return rawmulcache[v1,v2].item()
+    if v1 < 256 and v2 < 256 and rawmulcache[v1][v2] is not None:
+        return rawmulcache[v1][v2]
     if v1 < 2 or v2 < 2:
         return v1 * v2
     if length is None:
@@ -102,16 +101,13 @@ j = Tensor.arange(256, dtype=dtypes.uint8).reshape((1, 256))
 addcache = i ^ j
 
 
-# Keep the rest of the calculations as they were
-rawmulcache = Tensor.full((256, 256), -1, dtype=dtypes.uint8)
-mulcache = Tensor.full((256, 256), -1, dtype=dtypes.uint8)
+rawmulcache = [[None for _ in range(256)] for _ in range(256)]
+mulcache = [[None for _ in range(256)] for _ in range(256)]
 
 for i in range(256):
     for j in range(256):
         rawmulcache[i][j] = binmul(i, j)
-        mulcache[i][j] = BinaryFieldElement(binmul(i, j)).value
+        mulcache[i][j] = BinaryFieldElement(rawmulcache[i][j]).value
 
-if __name__ == "__main__":
-    print(addcache)
-    print(rawmulcache)
-    print(mulcache)
+rawmulcache = Tensor(rawmulcache)
+mulcache = Tensor(mulcache)
